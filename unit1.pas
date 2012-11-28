@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.121126';
+  APP_VERSION = '2.0.121128';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -1768,7 +1768,7 @@ var
   mlist: TStringList;
   i, c, IsTransDir: integer;
   i64: int64;
-  r, s, s1, fn, m, mt, id, dur, no: String;
+  r, s, s1, fn, m, mt, id, dur, no, BrowseFlag: String;
   mi: TGetMediaInfo;
 begin
   { <ObjectID>0</ObjectID>
@@ -1796,9 +1796,26 @@ begin
   val:= item.FindNode('ObjectID');
   if val = nil then Exit;
   id:= val.TextContent;
-  val:= item.FindNode('StartingIndex');
+
+  val:= item.FindNode('BrowseFlag'); // BrowseMetadata/BrowseDirectChildren
   if val = nil then Exit;
-  si:= StrToIntDef(val.TextContent, 0);
+  BrowseFlag:= val.TextContent;
+  if BrowseFlag = 'BrowseMetadata' then begin
+    i:= RPos('$', id);
+    if i > 1 then begin
+      si:= StrToIntDef(Copy(id, i+1, MaxInt), 0);
+      id:= Copy(id, 1, i-1);
+    end else if id = '0' then begin
+      si:= 0;
+      id:= '-1';
+    end else begin
+      Exit;
+    end;
+  end else begin
+    val:= item.FindNode('StartingIndex');
+    if val = nil then Exit;
+    si:= StrToIntDef(val.TextContent, 0);
+  end;
   val:= item.FindNode('RequestedCount');
   if val = nil then Exit;
   rc:= StrToIntDef(val.TextContent, MaxInt);
@@ -1816,7 +1833,12 @@ begin
   ClientInfo:= TClientInfo(ClientInfoList.Objects[
    ClientInfoList.IndexOf(Sock.GetRemoteSinIP)]);
   mlist:= ClientInfo.CurFileList;
-  if id = '0' then begin
+  if id = '-1' then begin
+    ClientInfo.CurId:= id; ClientInfo.CurDir:= '';
+    mlist.Clear;
+    mlist.Sorted:= False;
+    mlist.Add(#1 + 'root');
+  end else if id = '0' then begin
     ClientInfo.CurId:= id; ClientInfo.CurDir:= '';
     mlist.Clear;
     mlist.Sorted:= False;
@@ -1902,8 +1924,13 @@ begin
         s:= StringReplace(s, '>', '&gt;', [rfReplaceAll]);
         s:= StringReplace(s, '''', '&apos;', [rfReplaceAll]);
 
+        if id = '-1' then
+          s1:= '0'
+        else
+          s1:= id + '$' + IntToStr(i);
+
         r:= r +
-         '<container id="' + id + '$' + IntToStr(i) + '" childCount="1"' +
+         '<container id="' + s1 + '" childCount="1"' +
          ' parentID="' + id + '" restricted="1">' +
          '<dc:title>' + s + '</dc:title><dc:date>0000-00-00T00:00:00</dc:date>'+
          '<upnp:class>object.container.storageFolder</upnp:class>'+
@@ -2088,7 +2115,11 @@ begin
 
   item:= docw.CreateElement('TotalMatches');
   parent.AppendChild(item);
-  val:= docw.CreateTextNode(IntToStr(mlist.Count));
+  if BrowseFlag = 'BrowseMetadata' then begin
+    val:= docw.CreateTextNode(IntToStr(c));
+  end else begin
+    val:= docw.CreateTextNode(IntToStr(mlist.Count));
+  end;
   item.AppendChild(val);
 
   item:= docw.CreateElement('UpdateID');
