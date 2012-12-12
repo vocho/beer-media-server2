@@ -5,7 +5,7 @@
 == 作者が実際に確認したもの ==
  * SONY Bravia KDL-32F1
  * Panasonic ビエラ・ワンセグ SV-ME970　（使用方法が独特ですので、[SVME970 こちら]を必ず参照してください。）
- * iPhone 4 用 Media Link Player Lite 1.1.9
+ * iPhone 4 用 Media Link Player Lite 1.2.3
 
 == ユーザーから情報提供があったもの ==
 
