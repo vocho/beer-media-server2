@@ -2,7 +2,7 @@
 
 = 追加情報 =
 
- * 次の理由から Mencoder は最新ビルドではなく、mencoder.exe (rev33883) と mencoder2.exe(rev35224) を配布しております。<br>なお、配布している mencoder.exe では CSS を解除できません。
+ * 次の理由から Mencoder は最新ビルドではなく、mencoder.exe (rev33883) と mencoder2.exe(rev35224) を配布しております。<br>なお、CSS 解除機能を有するソフトの配布は法律で禁止されているため、配布している mencoder.exe、mencoder2.exe には CSS の解除機能がありません。
   # Mencoder の最新ビルドでは、当方で試す限り、mpg(mpeg2+AC3) へのエンコード時に音ずれが発生する場合があります。rev33883 ではその症状は発生しなません。<br>なお、-vf オプションから harddup を外すか、fixpts を加える（-vf fixpts,harddup とする）か、pullup を加える（-vf pullup,harddup とする）か、あるいは -ofps 24000/1001 とすると最新版での音ずれは少なくなるようです。どうにもバグくさいですし、副作用が怖いのでそれらの設定をデフォルトにするのは見送っています。
   # Mencoder の最新ビルドでは、当方で試す限り、mpg(mpeg2+AC3) へのエンコード時に音声がただのノイズになるという症状が発生する場合があります。Paehl Build rev35224 や Subjunk Build 45 や Panasony Build であればその症状は発生しません。<br>なお、ノイズにより再生機器や視聴者に障害が生じる恐れがありますので mencoder.exe を入れ替える方は注意してください。
   # Subjunk Build 45 や Panasony Build では、当方で試す限り、mp4 へのエンコード時に音ずれが発生する場合があります。Paehl Build rev35224 ではその症状は発生しません。
