@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.121128';
+  APP_VERSION = '2.0.121212';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -52,7 +52,7 @@ uses
   interfacebase, win32int, windows, // for Hook SUSPEND EVENT
   {$ENDIF}
   lazutf8classes, inifiles, comobj, contnrs, process, SynRegExpr,
-  dateutils,
+  dateutils, simpleipc,
   unit2;
 
 
@@ -182,8 +182,7 @@ type
   public
     L_S: Plua_State;
     CurId, CurDir: string;
-    chunk_common1, chunk_common2, chunk_client1, chunk_client2: string;
-    chunk_common1_t, chunk_common2_t, chunk_client1_t, chunk_client2_t: integer;
+    chunks: TStringList;
     FullInfoCount: integer;
     CurFileList: TStringList;
     LastAccTime: TDateTime;
@@ -194,6 +193,27 @@ type
     destructor Destroy; override;
   end;
 
+  { TChunkObj }
+
+  TChunkObj = class
+    bin: string;
+    time: integer;
+  end;
+
+  { TMySimpleIPCServer }
+
+  TMySimpleIPCServer = class(TSimpleIPCServer)
+  private
+    cs_vsl: TCriticalSection;
+    vsl: TValStringList;
+    procedure DoMessage(Sender: TObject);
+  public
+    constructor {%H-}Create;
+    destructor Destroy; override;
+    function GetValue(const vname: string): string;
+    procedure SetValue(const vname, val: string);
+  end;
+
 var
   iniFile: TIniFile;
   ExecPath, TempPath, UUID, DAEMON_PORT: string;
@@ -202,6 +222,7 @@ var
   thHttpDaemon: THttpDaemon;
   thSSDPDAemon: TSSDPDaemon;
   thMIC: TMediaInfoCollector;
+  SIPCServer: TMySimpleIPCServer;
   MediaDirs: TStringList;
   ClientInfoList: TStringList;
   MyIPAddr: string;
@@ -424,24 +445,49 @@ begin
   end;
 end;
 
-procedure LoadLua(L: Plua_State; const fname: string;
- var chunk1, chunk2: string; var chunk1_t, chunk2_t: integer);
+procedure LoadLua(L: Plua_State; const fname: string; chunks: TStringList);
 var
-  s: string;
+  s, s1, s2, chunk: string;
+  i: Integer;
+  obj: TChunkObj;
 begin
   if fname = '' then Exit;
   if ExtractFilePath(fname) = '' then begin
     s:= ExecPath + 'script/' + fname + '.lua';
-    chunk1:= LoadLuaRaw(L, s, chunk1, chunk1_t);
-    if chunk1 <> '' then chunk1_t:= GetFileTime(s);
-    s:= iniFile.ReadString(INI_SEC_SCRIPTS, 'user', '');
-    if s <> '' then begin
-      s:= ExecPath + 'script/' + s + '/' + fname + '.lua';
-      chunk2:= LoadLuaRaw(L, s, chunk2, chunk2_t);
-      if chunk2 <> '' then chunk2_t:= GetFileTime(s);
+    if FileExistsUTF8(s) then begin
+      i:= chunks.IndexOf(fname);
+      if i < 0 then begin
+        obj:= TChunkObj.Create;
+        chunks.AddObject(fname, obj);
+      end else
+        obj:= TChunkObj(chunks.Objects[i]);
+      chunk:= LoadLuaRaw(L, s, obj.bin, obj.time);
+      if chunk <> '' then begin
+        obj.bin:= chunk;
+        obj.time:= GetFileTime(s);
+      end;
+    end;
+
+    s1:= SIPCServer.GetValue('UserScripts');
+    while True do begin
+      s2:= Fetch(s1, '|');
+      if s2 = '' then Break;
+      s:= ExecPath + 'script/' + s2 + '/' + fname + '.lua';
+      if not FileExistsUTF8(s) then Continue;
+      i:= chunks.IndexOf(s2 + '/' + fname);
+      if i < 0 then begin
+        obj:= TChunkObj.Create;
+        chunks.AddObject(s2 + '/' + fname, obj);
+      end else
+        obj:= TChunkObj(chunks.Objects[i]);
+      chunk:= LoadLuaRaw(L, s, obj.bin, obj.time);
+      if chunk <> '' then begin
+        obj.bin:= chunk;
+        obj.time:= GetFileTime(s);
+      end;
     end;
   end else
-    chunk1:= LoadLuaRaw(L, fname);
+    LoadLuaRaw(L, fname);
 end;
 
 procedure MIValue2LuaTable(L: PLua_State; const key, val: string);
@@ -759,6 +805,13 @@ begin
   end;
   thMIC.Start;
 
+  SIPCServer:= TMySimpleIPCServer.Create;
+  SIPCServer.ServerID:= 'SIPC:' + SHORT_APP_NAME + SHORT_APP_VERSION + ':' + DAEMON_PORT;
+  SIPCServer.vsl.Vals['UserScripts']:= iniFile.ReadString(INI_SEC_SCRIPTS, 'user', '');
+  SIPCServer.OnMessage:= @SIPCServer.DoMessage;
+  SIPCServer.Global:= True;
+  SIPCServer.StartServer;
+
   sl:= TStringListUTF8.Create;
   try
     sock:= TBlockSocket.Create;
@@ -830,6 +883,7 @@ begin
     thHttpDaemon.WaitFor;
     thHttpDaemon.Free;
   end;
+  SIPCServer.Free;
   if Assigned(thMIC) then begin
     tHMIC.Suspended:= False;
     thMIC.Terminate;
@@ -1147,9 +1201,7 @@ begin
       ClientInfo.LastAccTime:= Now;
 
       InitLua(L_S);
-      LoadLua(L_S, 'common',
-       ClientInfo.chunk_common1, ClientInfo.chunk_common2,
-       ClientInfo.chunk_common1_t, ClientInfo.chunk_common2_t);
+      LoadLua(L_S, 'common', ClientInfo.chunks);
 
       repeat
         if Terminated then Break;
@@ -1206,9 +1258,7 @@ begin
           end;
 
           if ClientInfo.ScriptFileName <> '' then begin
-            LoadLua(L_S, ClientInfo.ScriptFileName,
-             ClientInfo.chunk_client1, ClientInfo.chunk_client2,
-             ClientInfo.chunk_client1_t, ClientInfo.chunk_client2_t);
+            LoadLua(L_S, ClientInfo.ScriptFileName, ClientInfo.chunks);
 
             ClientInfo.L_S:= L_S;
             ClientInfo.SortType:= 1;
@@ -2616,6 +2666,24 @@ begin
                 end else
                   cmd:= StringReplace(cmd, '$_cmd_seek_'+s+'_$', '', [rfReplaceAll]);
               end;
+              // $_cmd_quiet_xxxxx_$
+              while True do begin
+                i:= Pos('$_cmd_quiet_', cmd);
+                if i = 0 then Break;
+                s:= Copy(cmd, i+Length('$_cmd_quiet_'), MaxInt);
+                s:= Fetch(s, '_$'); // tc
+                lua_getglobal(L_S, 'BMS');
+                lua_getfield(L_S, -1, 'GetCmdQuiet');
+                lua_remove(L_S, -2); // remove BMS
+                if lua_isnil(L_S, -1) then begin
+                  lua_pop(L_S, 1);
+                  Break;
+                end;
+                lua_pushstring(L_S, s); // tc
+                CallLua(L_S, 1, 1);
+                cmd:= StringReplace(cmd, '$_cmd_quiet_'+s+'_$', lua_tostring(L_S, -1), [rfReplaceAll]);
+                lua_pop(L_S, 1);
+              end;
 
               Line:= GetLineHeader + 'TRANSCODE ' + exec + CRLF + cmd + CRLF + CRLF;
               Synchronize(@AddLog);
@@ -3397,6 +3465,24 @@ procedure TGetMediaInfo.GetPlayInfo(L: PLua_State; get_new: boolean);
     end;
   end;
 
+  procedure LuaTableCopy(L: PLua_State);
+  begin
+    lua_newtable(L);
+    lua_pushnil(L);  // first key
+    while lua_next(L, -3) <> 0 do begin
+      // uses 'key' (at index -2) and 'value' (at index -1)
+      lua_pushvalue(L, -2); // copy key
+      lua_pushvalue(L, -2); // copy val
+      if lua_istable(L, -1) then begin
+        LuaTableCopy(L);
+        lua_remove(L, -2); // remove old val
+      end;
+      lua_settable(L, -5); // copy2new
+      // removes 'value'; keeps 'key' for next iteration
+      lua_pop(L, 1);
+    end;
+  end;
+
 var
   i: Integer;
   b: Boolean;
@@ -3405,62 +3491,77 @@ begin
   if not get_new and (PlayInfo.Count > 0) then Exit;
   if Self.Count = 0 then Exit;
 
-  if FileExistsUTF8(ExtractFilePath(FileName) + '$.lua') then begin
-    LoadLuaRaw(L, ExtractFilePath(FileName) + '$.lua');
-  end;
-
-  if FileExistsUTF8(FileName + '.lua') then begin
-    LoadLuaRaw(L, FileName + '.lua');
-  end;
-
+  // グローバル変数BMSを保存
   lua_getglobal(L, 'BMS');
-  lua_getfield(L, -1, 'GetPlayInfo');
-  lua_remove(L, -2); // remove BMS
-  if lua_isnil(L, -1) then begin
-    lua_pop(L, 1);
-    Exit;
-  end;
-  lua_pushstring(L, FileName); // fname
-  lua_newtable(L);             // minfo
-  for i:= 0 to Count-1 do begin
-    MIValue2LuaTable(L, LowerCase(Self.Strings[i]), Self.Vali[i]);
-  end;
-  sub('general');
-  sub('video');
-  sub('audio');
-  sub('text');
-  sub('chapters');
-  sub('image');
-  sub('menu');
-  sub('dvd');
-  sub('');
-  CallLua(L, 2, 3);
+  LuaTableCopy(L);
+  lua_setglobal(L, '$$$_SAVE_$$$');
+  lua_pop(L, 1);
 
-  PlayInfo.Clear;
-  if lua_istable(L, 1{ret1}) then begin
-    lua_rawgeti(L, 1{ret1}, 1);
-    b:= lua_istable(L, -1);
-    lua_pop(L, 1);
-    if b then begin
-      c:= lua_rawlen(L, 1{ret1});
-      for i:= 1 to c do begin
-        lua_pushnumber(L, i);
-        lua_rawget(L, 1{ret1});
-        LuaTable2PlayInfo(L, lua_gettop(L), i);
-        lua_pop(L, 1);
-      end;
-      PlayInfo.Values['InfoCount']:= IntToStr(c);
-      PlayInfo.Values['IsFolder']:= '1';
-    end else begin
-      LuaTable2PlayInfo(L, 1{ret1}, 1);
+  try
+    if FileExistsUTF8(ExtractFilePath(FileName) + '$.lua') then begin
+      LoadLuaRaw(L, ExtractFilePath(FileName) + '$.lua');
     end;
-  end else begin
-    PlayInfo.Values['mime[1]']:= lua_tostring(L, 1{ret1});
-  end;
 
-  if not lua_isnil(L, 2{ret2}) then PlayInfo.Values['DispName']:= lua_tostring(L, -2);
-  if not lua_isnil(L, 3{ret3}) then PlayInfo.Values['SortName']:= lua_tostring(L, -1);
-  lua_pop(L, 3);
+    if FileExistsUTF8(FileName + '.lua') then begin
+      LoadLuaRaw(L, FileName + '.lua');
+    end;
+
+    lua_getglobal(L, 'BMS');
+    lua_getfield(L, -1, 'GetPlayInfo');
+    lua_remove(L, -2); // remove BMS
+    if lua_isnil(L, -1) then begin
+      lua_pop(L, 1);
+      Exit;
+    end;
+    lua_pushstring(L, FileName); // fname
+    lua_newtable(L);             // minfo
+    for i:= 0 to Count-1 do begin
+      MIValue2LuaTable(L, LowerCase(Self.Strings[i]), Self.Vali[i]);
+    end;
+    sub('general');
+    sub('video');
+    sub('audio');
+    sub('text');
+    sub('chapters');
+    sub('image');
+    sub('menu');
+    sub('dvd');
+    sub('');
+    CallLua(L, 2, 3);
+
+    PlayInfo.Clear;
+    if lua_istable(L, 1{ret1}) then begin
+      lua_rawgeti(L, 1{ret1}, 1);
+      b:= lua_istable(L, -1);
+      lua_pop(L, 1);
+      if b then begin
+        c:= lua_rawlen(L, 1{ret1});
+        for i:= 1 to c do begin
+          lua_pushnumber(L, i);
+          lua_rawget(L, 1{ret1});
+          LuaTable2PlayInfo(L, lua_gettop(L), i);
+          lua_pop(L, 1);
+        end;
+        PlayInfo.Values['InfoCount']:= IntToStr(c);
+        PlayInfo.Values['IsFolder']:= '1';
+      end else begin
+        LuaTable2PlayInfo(L, 1{ret1}, 1);
+      end;
+    end else begin
+      PlayInfo.Values['mime[1]']:= lua_tostring(L, 1{ret1});
+    end;
+
+    if not lua_isnil(L, 2{ret2}) then PlayInfo.Values['DispName']:= lua_tostring(L, -2);
+    if not lua_isnil(L, 3{ret3}) then PlayInfo.Values['SortName']:= lua_tostring(L, -1);
+    lua_pop(L, 3);
+
+  finally
+    // グローバル変数BMSを復帰
+    lua_getglobal(L, '$$$_SAVE_$$$');
+    LuaTableCopy(L);
+    lua_setglobal(L, 'BMS');
+    lua_pop(L, 1);
+  end;
 end;
 
 procedure TGetMediaInfo.SaveToStream(Stream: TStream);
@@ -3508,14 +3609,22 @@ begin
   CurFileList:= TMediaFileList.Create;
   TMediaFileList(CurFileList).ClientInfo:= Self;
   InfoTable:= TValStringList.Create;
+  chunks:= TStringListUTF8_mod.Create;
+  chunks.Sorted:= True;
 end;
 
 destructor TClientInfo.Destroy;
+var
+  i: Integer;
 begin
   CurFileList.Free;
   InfoTable.Free;
+  for i:= 0 to chunks.Count-1 do chunks.Objects[i].Free;
+  chunks.Free;
   inherited Destroy;
 end;
+
+{ TMediaFileList }
 
 function TMediaFileList.DoCompareText(const s1, s2: string): PtrInt;
 var
@@ -3554,6 +3663,51 @@ begin
       end;
     end;
   end;
+end;
+
+{ TMySimpleIPCServer }
+
+constructor TMySimpleIPCServer.Create;
+begin
+  inherited Create(nil);
+  vsl:= TValStringList.Create;
+  InitCriticalSection(cs_vsl);
+end;
+
+destructor TMySimpleIPCServer.Destroy;
+begin
+  inherited Destroy;
+  vsl.Free;
+  DoneCriticalSection(cs_vsl);
+end;
+
+function TMySimpleIPCServer.GetValue(const vname: string): string;
+begin
+  EnterCriticalSection(cs_vsl);
+  try
+    Result:= vsl.Vals[vname];
+  finally
+    LeaveCriticalSection(cs_vsl);
+  end;
+end;
+
+procedure TMySimpleIPCServer.SetValue(const vname, val: string);
+begin
+  EnterCriticalSection(cs_vsl);
+  try
+    vsl.Vals[vname]:= val;
+  finally
+    LeaveCriticalSection(cs_vsl);
+  end;
+end;
+
+procedure TMySimpleIPCServer.DoMessage(Sender: TObject);
+var
+  s, s1: string;
+begin
+  s:= StringMessage;
+  s1:= Fetch(s, '=');
+  SetValue(s1, s);
 end;
 
 //--------------------------------------------------
