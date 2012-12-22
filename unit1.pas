@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.121212';
+  APP_VERSION = '2.0.121223';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -61,6 +61,7 @@ uses
 const
   HTTP_HEAD_SERVER = 'OS/1.0, UPnP/1.0, ' + SHORT_APP_NAME + '/' + SHORT_APP_VERSION;
   INI_SEC_SYSTEM = 'SYSTEM';
+  INI_SEC_MIKeys = 'MInfoKeys';
   INI_SEC_SCRIPTS = 'SCRIPTS';
   MEDIA_INFO_DB_FILENAME = 'mi.db';
   MEDIA_INFO_DB_HEADER = 'midb01';
@@ -301,6 +302,29 @@ begin
   Result := 1;
 end;
 
+function GetCmdStdOut_func(L : Plua_State) : Integer; cdecl;
+var
+  s: string;
+  proc: TPipeProcExec;
+begin
+  proc:= TPipeProcExec.Create;
+  try
+    s:= lua_tostring(L, 1);
+    {$IFDEF Windows}
+    if ExtractFilePath(s) = '' then s:= ExecPath + s;
+    {$ENDIF}
+    proc.Cmds.Add('"' + s + '" ' + lua_tostring(L, 2));
+    proc.Start;
+    while not proc.Done do ;
+    lua_pushstring(L, proc.OutputMsgs[0]);
+    Result := 1;
+  finally
+    //proc.Terminate;
+    //proc.WaitFor;
+    proc.Free;
+  end;
+end;
+
 (*
 function GetTempFileName_func(L : Plua_State) : Integer; cdecl;
 begin
@@ -364,6 +388,7 @@ begin
   lua_register(L, 'tonumberDef', @tonumberDef_func);
   regTable('fileu', 'ExtractFileName', @ExtractFileName_func);
   regTable('fileu', 'ExtractFilePath', @ExtractFilePath_func);
+  regTable('fileu', 'GetCmdStdOut', @GetCmdStdOut_func);
   //regTable('fileu', 'FileExists', @FileExists_func);
   //regTable('fileu', 'GetTempFileName', @GetTempFileName_func);
   //regTable('fileu', 'DeleteFileMatches', @DeleteFileMatches_func);
@@ -438,7 +463,7 @@ begin
         // BOM を削除
         sl[0]:= Copy(sl[0], 4, MaxInt);
       end;
-      Result:= LoadLuaRawRaw(L, sl.Text, fname + '.lua', True);
+      Result:= LoadLuaRawRaw(L, sl.Text, fname, True);
     finally
       sl.Free;
     end;
@@ -743,8 +768,9 @@ var
   i: integer;
   sl: TStringList;
   sock: TBlockSocket;
-  s: String;
+  s, tray_msg: String;
 begin
+  tray_msg:= '';
   UUID:= '';
   if FileExistsUTF8(ExecPath + 'UUID') then begin
     sl:= TStringListUTF8.Create;
@@ -785,10 +811,8 @@ begin
     end else
       Inc(i);
   end;
-  if MediaDirs.Count = 0 then begin
-    TrayIcon.BalloonHint:= 'ERROR: [MediaDirs]が未設定です。';
-    TrayIcon.ShowBalloonHint;
-  end;
+  if MediaDirs.Count = 0 then
+    tray_msg:= tray_msg + CR + 'ERROR: bms.iniにおいて[MediaDirs]が未設定です。';
 
   if not DirectoryExistsUTF8(TempPath) then
     ForceDirectoriesUTF8(TempPath);
@@ -800,9 +824,10 @@ begin
   try
     thMIC.LoadMediaInfo;
   except
-    TrayIcon.BalloonHint:= 'ERROR: ' + MEDIA_INFO_DB_FILENAME + 'が破損しています。';
-    TrayIcon.ShowBalloonHint;
+    tray_msg:= tray_msg + CR + 'ERROR: ' + MEDIA_INFO_DB_FILENAME + 'が破損しています。';
   end;
+  if thMIC.exkey_list.Count = 0 then
+    tray_msg:= tray_msg + CR + 'WARNING: bms.iniにおいて[' + INI_SEC_MIKeys + ']が未設定です。';
   thMIC.Start;
 
   SIPCServer:= TMySimpleIPCServer.Create;
@@ -845,8 +870,7 @@ begin
     thSSDPDaemon:= TSSDPDaemon.Create;
     //SendAlive;
   end else begin
-    TrayIcon.BalloonHint:= 'ERROR: 自己 IP アドレスが取得できませんでした。';
-    TrayIcon.ShowBalloonHint;
+    tray_msg:= tray_msg + CR + 'ERROR: 自己 IP アドレスが取得できませんでした。';
   end;
 
   PopupMenu:= TPopupMenu.Create(nil);
@@ -864,6 +888,11 @@ begin
 
   TrayIcon.PopUpMenu := PopupMenu;
   TrayIcon.OnClick:= @MyApp.OnTrayIconClick;
+
+  if tray_msg <> '' then begin
+    TrayIcon.BalloonHint:= tray_msg;
+    TrayIcon.ShowBalloonHint;
+  end;
 end;
 
 destructor TMyApp.Destroy;
@@ -1777,7 +1806,7 @@ var
                (mi.PlayInfo.Values['command[1][1]'] <> '') then begin
                 // トランスコードの場合
                 if mi.PlayInfo.Values['IsFolder'] <> '' then begin
-                  s:= s + '?T'; // トランスコフォルダの場合
+                  s:= s + #$09'?T'; // トランスコフォルダの場合
                 end else begin
                   s:= s + #$09'1?t';
                 end;
@@ -1796,7 +1825,7 @@ var
       end;
 
       if i = IsTrans then begin
-        GetListInTrans(Copy(sl[i], 2, Length(sl[i])-3), sl);
+        GetListInTrans(Copy(sl[i], 2, Length(sl[i])-4), sl);
         ClientInfo.FullInfoCount:= sl.Count;
         Exit;
       end;
@@ -2050,7 +2079,8 @@ begin
             end; // t
 
             'T': begin // Transcode(Folder)
-              fn:= Copy(fn, 2, Length(fn)-3);
+              no:= Copy(fn, 2, Length(fn)-3);
+              fn:= Fetch(no, #$09);
               mi:= thMIC.GetMediaInfo(fn);
               try
                 mi.GetPlayInfo(L_S);
@@ -3052,6 +3082,7 @@ begin
   mi_ac_list:= TStringListUTF8_mod.Create;
   mi_ac_list.Sorted:= True;
   exkey_list:= TStringListUTF8_mod.Create;
+  iniFile.ReadSectionRaw(INI_SEC_MIKeys, exkey_list);
   PriorityList:= TStringListUTF8_mod.Create;
   FreeOnTerminate:= False;
   MaxMediaInfo:= iniFile.ReadInteger(INI_SEC_SYSTEM, 'MAX_MEDIAINFO', 500);
@@ -3368,7 +3399,7 @@ begin
   lua_pop(L, 1);
 
   key:= lua_tostring(L, 2{key});
-  lua_pushstring(L, LowerCase(key));
+  lua_pushstring(L, LowerCase(key)); // 大文字小文字は区別しない
   lua_rawget(L, 1{Table});
   if lua_isnil(L, -1) then begin
     if sk <> '' then begin
@@ -3379,24 +3410,45 @@ begin
       mi:= TGetMediaInfo(p^);
       lua_pop(L, 1);
 
-      if sk <> '' then sk_key:= sk + ';' + key else sk_key:= key;
+      sk_key:= sk + ';' + key;
 
-      // 新しいキーを追加
-      i:= MediaInfo_New;
-      try
-        s:= GetMediaInfoSingle(mi.FileName, sk_key, i);
-      finally
-        MediaInfo_Delete(i);
+      if sk = 'user' then begin
+        s:= mi.Vals['user;' + key];
+      end else begin
+        // 新しいキーを追加
+        i:= MediaInfo_New;
+        try
+          s:= GetMediaInfoSingle(mi.FileName, sk_key, i);
+        finally
+          MediaInfo_Delete(i);
+        end;
+        lua_pushstring(L, s);
+        lua_setfield(L, 1{Table}, PChar(LowerCase(key)));
+        mi.AddVal(sk_key, s);
+        thMIC.AddExKey(sk_key);
       end;
-      lua_pushstring(L, s);
-      lua_setfield(L, 1{Table}, PChar(LowerCase(key)));
-      mi.AddVal(sk_key, s);
-      thMIC.AddExKey(sk_key);
       lua_pushstring(L, s); // 戻り値
-    end else
-      lua_pushnil(L);
+    end;
   end;
   Result:= 1;
+end;
+
+function minfo_mt_newindex(L : Plua_State) : Integer; cdecl;
+var
+  mi: TGetMediaInfo;
+  p: PPointer;
+  s, key: string;
+begin
+  lua_getfield(L, 1{Table}, '$_TGetMediaInfo_$');
+  p:= lua_touserdata(L, -1);
+  mi:= TGetMediaInfo(p^);
+  lua_pop(L, 1);
+
+  key:= lua_tostring(L, 2{key});
+
+  s:= lua_tostring(L, 3{value});
+  mi.Vals['user;' + key]:= s;
+  Result:= 0;
 end;
 
 procedure TGetMediaInfo.GetPlayInfo(L: PLua_State; get_new: boolean);
@@ -3430,6 +3482,11 @@ procedure TGetMediaInfo.GetPlayInfo(L: PLua_State; get_new: boolean);
     lua_pushstring(L, '__index');
     lua_pushcfunction(L, @minfo_mt_index);
     lua_settable(L, -3); // set minfo.xxx.メタテーブル.index
+    if s = 'user' then begin
+      lua_pushstring(L, '__newindex');
+      lua_pushcfunction(L, @minfo_mt_newindex);
+      lua_settable(L, -3); // set minfo.xxx.メタテーブル.newindex
+    end;
     lua_setmetatable(L, -2);
 
     if s <> '' then begin
@@ -3526,6 +3583,7 @@ begin
     sub('image');
     sub('menu');
     sub('dvd');
+    sub('user');
     sub('');
     CallLua(L, 2, 3);
 
