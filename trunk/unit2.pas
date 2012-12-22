@@ -596,6 +596,7 @@ end;
 
 function GetMediaInfoSingle(const fname, key: string; mi: Cardinal): string;
 begin
+  Result:= '';
   if MediaInfo_Open(mi, PWideChar(UTF8Decode(fname))) <> 1 then Exit;
   try
     Result:= GetMediaInfoSingleSub(key, mi);
@@ -808,11 +809,9 @@ begin
       Exit;
     end;
 
-    if (GetFileSize(fname) <= 0) then begin
-      Exit;
-    end;
-
     try
+      if (GetFileSize(fname) <= 0) then Exit;
+
       //mi:= MediaInfo_New;
       //try
         if MediaInfo_Open(mi, PWideChar(UTF8Decode(fname))) <> 1 then Exit;
@@ -848,36 +847,17 @@ begin
           end;
           s:= GetInfo2(mi, Stream_Video, main_v, 'Format');
           sl.Vals['Video;Format']:= s;
-          if s <> '' then begin
-            sl.AddVal('Video;Format_Profile', GetInfo2(mi, Stream_Video, main_v, 'Format_Profile'));
-            sl.AddVal('Video;Width', GetInfo2(mi, Stream_Video, main_v, 'Width'));
-            sl.AddVal('Video;Height', GetInfo2(mi, Stream_Video, main_v, 'Height'));
-            sl.AddVal('Video;Duration', GetInfo2(mi, Stream_Video, main_v, 'Duration/String3'));
-            sl.AddVal('Video;BitRate', GetInfo2(mi, Stream_Video, main_v, 'BitRate'));
-            sl.AddVal('Video;FrameRate', GetInfo2(mi, Stream_Video, main_v, 'FrameRate'));
-            sl.AddVal('Video;FrameRate_Mode', GetInfo2(mi, Stream_Video, main_v, 'FrameRate_Mode'));
-            sl.AddVal('Video;Standard', GetInfo2(mi, Stream_Video, main_v, 'Standard'));
-            sl.AddVal('Video;CodecID', GetInfo2(mi, Stream_Video, main_v, 'CodecID'));
-            sl.AddVal('Video;DisplayAspectRatio', GetInfo2(mi, Stream_Video, main_v, 'DisplayAspectRatio'));
-            sl.AddVal('Video;ID', GetInfo2(mi, Stream_Video, main_v, 'ID'));
-            sl.AddVal('Video;ScanType', GetInfo2(mi, Stream_Video, main_v, 'ScanType'));
-
-            if SeekTimeStr2Num(sl.Vals['General;Duration'])
-             < SeekTimeStr2Num(sl.Vals['Video;Duration']) then begin
-              // 矛盾を修正。 MediaInfo.DLL のバグ?
-              sl.Vals['General;Duration']:= sl.Vals['Video;Duration'];
-            end;
+          sl.AddVal('Video;Duration', GetInfo2(mi, Stream_Video, main_v, 'Duration/String3'));
+          if SeekTimeStr2Num(sl.Vals['General;Duration'])
+           < SeekTimeStr2Num(sl.Vals['Video;Duration']) then begin
+            // 矛盾を修正。 MediaInfo.DLL のバグ?
+            sl.Vals['General;Duration']:= sl.Vals['Video;Duration'];
           end;
 
           sl.AddVal('General;AudioCount', GetInfo(mi, 'General;%AudioCount%'));
           s:= GetInfo2(mi, Stream_Audio, 0, 'Format');
           sl.Vals['Audio;Format']:= s;
-          if s <> '' then begin
-            sl.AddVal('Audio;Channels', GetInfo2(mi, Stream_Audio, 0, 'Channel(s)'));
-            sl.AddVal('Audio;BitRate', GetInfo2(mi, Stream_Audio, 0, 'BitRate'));
-            sl.AddVal('Audio;SamplingRate', GetInfo2(mi, Stream_Audio, 0, 'SamplingRate'));
-            sl.AddVal('Audio;ID', GetInfo2(mi, Stream_Audio, 0, 'ID'));
-          end;
+          sl.AddVal('Audio;Channels', GetInfo2(mi, Stream_Audio, 0, 'Channel(s)'));
 
           {
           if (gf = 'MPEG-TS') or (gf = 'BDAV') then begin
@@ -892,131 +872,6 @@ begin
 
           if gf = 'ISO 9660' then begin
             DoLsDVD();
-            (*
-            res:= DoMPlayer(1);
-            if Pos('ID_DVD_VOLUME_ID=', res) > 0 then begin
-              sl.Vals['General;Format']:= 'ISO DVD';
-              sl.Vals['Video;Format']:= 'ISO DVD Video';
-              sl.Vals['Audio;Format']:= 'ISO DVD Audio';
-              md:= 0; max_dur := 0;
-              buf:= res;
-              while True do begin
-                c:= Pos('ID_DVD_TITLE_', buf);
-                if c <= 0 then Break;
-                buf:= Copy(buf, c+Length('ID_DVD_TITLE_'), MaxInt);
-                c:= Pos('_', buf);
-                if Copy(buf, c+1, 6) = 'LENGTH' then begin
-                  s:= Copy(buf, c+8, MaxInt);
-                  s:= Fetch(s, #$0d);
-                  d:= StrToFloatDef(s, 0);
-                  if d > 30 then begin
-                    sl.AddVal('DVD;LENGTH'+Copy(buf, 1, c-1), s);
-                    sl.AddVal('DVD;LENGTH_S'+Copy(buf, 1, c-1),
-                     SeekTimeNum2Str(SeekTimeStr2Num(s)));
-                    if d > md then begin
-                      md:= d;
-                      max_dur:= StrToInt(Copy(buf, 1, c-1));
-                    end;
-                  end;
-                end;
-              end;
-              sl.AddVal('DVD;LONGEST', IntToStr(max_dur));
-
-              if max_dur > 1 then res:= DoMPlayer(max_dur);
-
-              cc:= 0;
-              buf:= res;
-              while True do begin
-                c:= Pos('ID_AID_', buf);
-                if c <= 0 then Break;
-                buf:= Copy(buf, c+Length('ID_AID_'), MaxInt);
-                c:= Pos('_', buf);
-                if Copy(buf, c, 6) = '_LANG=' then begin
-                  s:= Copy(buf, c+6, MaxInt);
-                  s:= Fetch(s, #$0d);
-                  if sl.Vals['DVD;ALANG;' + s] = '' then begin
-                    sl.AddVal('DVD;ALANG;' + s, '1');
-                    Inc(cc);
-                  end;
-                end;
-              end;
-              sl.AddVal('DVD;ALANG;Count', IntToStr(cc));
-
-              cc:= 0;
-              buf:= res;
-              while True do begin
-                c:= Pos('ID_SID_', buf);
-                if c <= 0 then Break;
-                buf:= Copy(buf, c+Length('ID_SID_'), MaxInt);
-                c:= Pos('_', buf);
-                if Copy(buf, c, 6) = '_LANG=' then begin
-                  s:= Copy(buf, c+6, MaxInt);
-                  s:= Fetch(s, #$0d);
-                  if sl.Vals['DVD;SLANG;' + s] = '' then begin
-                    sl.AddVal('DVD;SLANG;' + s, '1');
-                    Inc(cc);
-                  end;
-                end;
-              end;
-              sl.AddVal('DVD;SLANG;Count', IntToStr(cc));
-
-              c:= Pos('ID_VIDEO_BITRATE=', res);
-              if c > 0 then begin
-                buf:= Copy(res, c+Length('ID_VIDEO_BITRATE='), MaxInt);
-                sl.Vals['Video;BitRate']:= Fetch(buf, #$0d);
-              end;
-
-              c:= Pos('ID_VIDEO_WIDTH=', res);
-              if c > 0 then begin
-                buf:= Copy(res, c+Length('ID_VIDEO_WIDTH='), MaxInt);
-                sl.Vals['Video;Width']:= Fetch(buf, #$0d);
-              end;
-
-              c:= Pos('ID_VIDEO_HEIGHT=', res);
-              if c > 0 then begin
-                buf:= Copy(res, c+Length('ID_VIDEO_HEIGHT='), MaxInt);
-                sl.Vals['Video;Height']:= Fetch(buf, #$0d);
-              end;
-
-              c:= Pos('ID_VIDEO_FPS=', res);
-              if c > 0 then begin
-                buf:= Copy(res, c+Length('ID_VIDEO_FPS='), MaxInt);
-                sl.Vals['Video;FrameRate']:= Fetch(buf, #$0d);
-              end;
-
-              c:= Pos('Opening audio decoder:', res);
-              if c > 0 then begin
-                buf:= Copy(res, c, MaxInt);
-                c:= Pos('ID_AUDIO_BITRATE=', buf);
-                if c > 0 then begin
-                  buf:= Copy(buf, c+Length('ID_AUDIO_BITRATE='), MaxInt);
-                  sl.Vals['Audio;BitRate']:= Fetch(buf, #$0d);
-                end;
-                c:= Pos('ID_AUDIO_RATE=', buf);
-                if c > 0 then begin
-                  buf:= Copy(buf, c+Length('ID_AUDIO_RATE='), MaxInt);
-                  sl.Vals['Audio;SamplingRate']:= Fetch(buf, #$0d);
-                end;
-                c:= Pos('ID_AUDIO_NCH=', buf);
-                if c > 0 then begin
-                  buf:= Copy(buf, c+Length('ID_AUDIO_NCH='), MaxInt);
-                  sl.Vals['Audio;Channels']:= Fetch(buf, #$0d);
-                end;
-              end;
-
-              c:= Pos('Movie-Aspect is', res);
-              if c > 0 then begin
-                buf:= Copy(res, c, MaxInt);
-                c:= Pos('ID_VIDEO_ASPECT=', buf);
-                if c > 0 then begin
-                  buf:= Copy(buf, c+Length('ID_VIDEO_ASPECT='), MaxInt);
-                  s:= Fetch(buf, #$0d);
-                  s:= Format('%1.3f', [StrToFloatDef(s, 0)+0.0005]);
-                  sl.Vals['Video;DisplayAspectRatio'] := s;
-                end;
-              end;
-            end;
-            *)
           end;
 
           if Assigned(exKeys) then begin
