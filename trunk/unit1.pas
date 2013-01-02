@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.121223';
+  APP_VERSION = '2.0.130102';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -826,8 +826,14 @@ begin
   except
     tray_msg:= tray_msg + CR + 'ERROR: ' + MEDIA_INFO_DB_FILENAME + 'が破損しています。';
   end;
-  if thMIC.exkey_list.Count = 0 then
-    tray_msg:= tray_msg + CR + 'WARNING: bms.iniにおいて[' + INI_SEC_MIKeys + ']が未設定です。';
+  sl:= TStringListUTF8.Create;
+  try
+    iniFile.ReadSections(sl);
+    if sl.IndexOf(INI_SEC_MIKeys) < 0 then
+      tray_msg:= tray_msg + CR + 'WARNING: bms.iniにおいて[' + INI_SEC_MIKeys + ']が未設定です。';
+  finally
+    sl.Free;
+  end;
   thMIC.Start;
 
   SIPCServer:= TMySimpleIPCServer.Create;
@@ -1803,7 +1809,7 @@ var
 
             else begin
               if (mi.PlayInfo.Values['command[1]'] <> '') or
-               (mi.PlayInfo.Values['command[1][1]'] <> '') then begin
+               (mi.PlayInfo.Values['IsFolder'] <> '') then begin
                 // トランスコードの場合
                 if mi.PlayInfo.Values['IsFolder'] <> '' then begin
                   s:= s + #$09'?T'; // トランスコフォルダの場合
@@ -1898,6 +1904,7 @@ begin
   val:= item.FindNode('RequestedCount');
   if val = nil then Exit;
   rc:= StrToIntDef(val.TextContent, MaxInt);
+  if rc < 1 then rc:= MaxInt;
 
   parent:= docw.DocumentElement.FindNode('s:Body');
   item:= docw.CreateElement('u:BrowseResponse');
