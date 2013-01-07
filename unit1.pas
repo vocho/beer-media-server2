@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.130102';
+  APP_VERSION = '2.0.130107';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -826,6 +826,7 @@ begin
   except
     tray_msg:= tray_msg + CR + 'ERROR: ' + MEDIA_INFO_DB_FILENAME + 'が破損しています。';
   end;
+
   sl:= TStringListUTF8.Create;
   try
     iniFile.ReadSections(sl);
@@ -2835,8 +2836,11 @@ begin
                     SendRaw(buf, i);
                     SendRaw(CRLF);
                     time2:= LCLIntf.GetTickCount;
-                    if (s_wait > 0) and (time2 - time1 < s_wait) then
+                    if (s_wait > 0) and (time2 - time1 < s_wait) then begin
                       SleepThread(Handle, s_wait - (time2 - time1));
+                    end else begin
+                      SleepThread(Handle, 1); // 変換作業を優先すべく最低でも1msは休むようにしてみた
+                    end;
                     time1:= time2;
                   end;
                   if (Sock.LastError <> 0) or (errc > 10000) or Terminated then
@@ -3409,7 +3413,7 @@ begin
   lua_pushstring(L, LowerCase(key)); // 大文字小文字は区別しない
   lua_rawget(L, 1{Table});
   if lua_isnil(L, -1) then begin
-    if sk <> '' then begin
+    if (sk <> '') or (Pos(';', key) > 0) then begin
       lua_pop(L, 1);
 
       lua_getfield(L, 1{Table}, '$_TGetMediaInfo_$');
@@ -3417,11 +3421,10 @@ begin
       mi:= TGetMediaInfo(p^);
       lua_pop(L, 1);
 
-      sk_key:= sk + ';' + key;
-
       if sk = 'user' then begin
         s:= mi.Vals['user;' + key];
       end else begin
+        if sk <> '' then sk_key:= sk + ';' + key else sk_key:= key;
         // 新しいキーを追加
         i:= MediaInfo_New;
         try

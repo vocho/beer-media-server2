@@ -234,6 +234,8 @@ begin
           end;
           Break;
         end;
+
+        SleepThread(Handle, 1000); // ウェイト。値の調整の余地あり。
       end;
     finally
       i:= 0;
@@ -289,6 +291,7 @@ begin
           Break;
         end;
 
+        SleepThread(Handle, 1000); // ウェイト。値の調整の余地あり。
       end;
     finally
       for i:= 0 to procs.Count-1 do begin
