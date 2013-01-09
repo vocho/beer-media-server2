@@ -89,9 +89,10 @@ begin
 
     proc:= TPipeProcExec.Create;
     try
+      proc.WaitTime:= 1;
       proc.Cmds.Add(cmd);
       proc.Start;
-      while not proc.Done do ;
+      while not proc.Done do Sleep(1);
       ss:= AnsiToUtf8(proc.OutputMsgs[0]);
       // lsDVDのバグ?対策
       ss:= StringReplace(ss, '&', '&amp;', [rfReplaceAll]);

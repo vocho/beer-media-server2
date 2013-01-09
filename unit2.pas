@@ -60,6 +60,7 @@ type
     Cmds, OutputMsgs, StderrMsgs: TStringList;
     Done, Complete: boolean;
     MaxMsgLen: integer;
+    WaitTime: integer; // 値を大きくしたほうが効率がよくなる。ただ、最低でもこの時間分は待たされる
     constructor Create;
     destructor Destroy; override;
     procedure Execute; override;
@@ -159,6 +160,8 @@ begin
   Done:= False; Complete:= False;
   MaxMsgLen:= MaxInt;
   FreeOnTerminate:= False;
+  WaitTime:= 1;
+  Priority:= tpLower;
   inherited Create(True);
 end;
 
@@ -185,12 +188,13 @@ type
 constructor TPipeProcExecOne.Create;
 begin
   FreeOnTerminate:= False;
+  Priority:= tpLower;
   inherited Create(True);
 end;
 
 procedure TPipeProcExecOne.Execute;
 var
-  i: Integer;
+  i, j: Integer;
   s: string;
 begin
   Done:= False;
@@ -218,24 +222,25 @@ begin
           end;
         end;
 
-        i:= CurProc.Stderr.NumBytesAvailable;
-        if i > 0 then begin
-          SetLength(s, i);
-          i := CurProc.Stderr.Read(s[1], i);
-          SetLength(s, i);
+        j:= CurProc.Stderr.NumBytesAvailable;
+        if j > 0 then begin
+          SetLength(s, j);
+          j := CurProc.Stderr.Read(s[1], j);
+          SetLength(s, j);
           if Length(StderrMsg+s) <= MaxMsgLen then
             StderrMsg := StderrMsg + s;
         end;
 
-        if not CurProc.Running and (CurProc.Output.NumBytesAvailable = 0)
-         and (CurProc.Stderr.NumBytesAvailable = 0) then begin
-          if Assigned(NextProc) and NextProc.Running then begin
-            NextProc.CloseInput;
+        if (i = 0) and (j = 0) then begin
+          if CurProc.Running then begin
+            SleepThread(Handle, 1); // ウェイト。値の調整の余地あり。
+          end else begin
+            if Assigned(NextProc) and NextProc.Running then begin
+              NextProc.CloseInput;
+            end;
+            Break;
           end;
-          Break;
         end;
-
-        SleepThread(Handle, 1000); // ウェイト。値の調整の余地あり。
       end;
     finally
       i:= 0;
@@ -291,7 +296,7 @@ begin
           Break;
         end;
 
-        SleepThread(Handle, 1000); // ウェイト。値の調整の余地あり。
+        SleepThread(Handle, WaitTime); // ウェイト
       end;
     finally
       for i:= 0 to procs.Count-1 do begin
@@ -541,10 +546,11 @@ begin
       else
         dwErr := ERROR_PROCESS_ABORTED;
 
-      if (hrt <> 0) then
+      if (hrt <> 0) then begin
         WaitForSingleObject(hProcessDup, INFINITE);
-      CloseHandle(hRT);
-      bSuccess := True;
+        CloseHandle(hRT);
+        bSuccess := True;
+      end;
 
       if (bDup) then
         CloseHandle(hProcessDup);
@@ -661,8 +667,9 @@ procedure GetMediaInfo(const fname: string; mi: Cardinal; sl: TValStringList;
        '"' + exec_path + 'lsdvd.exe"' +
        ' -x -Ox "' + ExtractShortPathNameUTF8(fname) + '"'
       );
+      proc.WaitTime:= 1;
       proc.Start;
-      while not proc.Done do ;
+      while not proc.Done do Sleep(1);
 
       s:= AnsiToUtf8(proc.OutputMsgs[0]);
       // lsDVDのバグ?対策

@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.130107';
+  APP_VERSION = '2.0.130109';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -2697,7 +2697,7 @@ begin
                       lua_pushnil(L_S);
                   end;
                   lua_pushnumber(L_S, unit2.GetFileSize(fname)); // t_len
-                  lua_pushnumber(L_S, ndur); // t_sec
+                  lua_pushnumber(L_S, ndur); // t_msec
                   CallLua(L_S, 5, 1);
                   cmd:= StringReplace(cmd, '$_cmd_seek_'+s+'_$', lua_tostring(L_S, -1), [rfReplaceAll]);
                   lua_pop(L_S, 1);
@@ -2744,6 +2744,7 @@ begin
               pipe_proc:= TPipeProcExec.Create;
               pipe_proc.Cmds.AddStrings(cmds);
               pipe_proc.MaxMsgLen:= 3000;
+              pipe_proc.WaitTime:= 1000;
               pipe_proc.Start;
             end;
 
