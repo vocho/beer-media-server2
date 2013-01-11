@@ -3,10 +3,10 @@
 = 追加情報 =
 
  * 次の理由から Mencoder は最新ビルドではなく、mencoder.exe rev35224 を配布しております。<br>なお、CSS 解除機能を有するソフトウェアの配布は法律で禁止されているため、配布している mencoder.exe には CSS の解除機能がありません。
-  * Mencoder の最新ビルドでは、当方で試す限り、mpg(mpeg2+AC3) へのエンコード時に音声がただのノイズになるという症状が発生する場合があります。Paehl Build rev35224 や Subjunk Build 47 や Panasony Build(from PMS for VIERA 1.63.0) であればその症状は発生しません。<br>なお、ノイズにより再生機器や視聴者に障害が生じる恐れがありますので mencoder.exe を入れ替える方は注意してください。
+  * Mencoder の最新ビルドでは、当方で試す限り、mpg(mpeg2+AC3) へのエンコード時に音声がただのノイズになるという症状が発生する場合があります。Paehl Build rev35224 や Subjunk Build 47 や Panasony Build(PMS for VIERA 1.66.0 の PS37) であればその症状は発生しません。<br>なお、ノイズにより再生機器や視聴者に障害が生じる恐れがありますので mencoder.exe を入れ替える方は注意してください。
    * Mencoder の rev35224 をビルドしてみても ffmpeg(lavc) の最新ビルドとリンクする限り症状が発生しますので、ffmpeg との整合性の点で問題があるような感じです。どうも ffmpeg rev 79d303 より後で仕様が変更されたのが原因ぽいです。そして Subjunk はそれに気が付いていてパッチを当てているようです。
    * -lavcopts 内の acodec=ac3 という部分を acodec=ac3_fixed とすれば少しましにはなることは確認してますが・・・
-  * Subjunk Build 47 や Panasony Build(from PMS for VIERA 1.63.0) では、当方で試す限り、mp4 へのエンコード時に音ずれが発生する場合があります。Paehl Build rev35224 ではその症状は発生しません。
+  * Subjunk Build 47 や Panasony Build(PMS for VIERA 1.66.0 の PS37) では、当方で試す限り、mp4 へのエンコード時に音ずれが発生する場合があります。Paehl Build rev35224 ではその症状は発生しません。
 
  * [MP4] - MP4 のストリーミング再生について。
 
