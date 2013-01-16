@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.130109';
+  APP_VERSION = '2.0.130116';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -111,7 +111,7 @@ type
     L_S: Plua_State;
     ClientInfo: TClientInfo;
     procedure AddLog;
-    function DoPlay(const fname, request: string): boolean;
+    function DoPlay(sno: integer; const fname, request: string): boolean;
     function DoPlayTranscode(sno: integer; const fname, request: string): boolean;
     function DoBrowse(docr, docw: TXMLDocument): boolean;
     function SendRaw(buf: Pointer; len: integer): boolean; overload;
@@ -1491,7 +1491,7 @@ begin
 
       s:= DecodeX(Copy(uri, Length('/p1/')+1, MaxInt));
       if not FileExistsUTF8(s) then Exit;
-      if not DoPlay(s, request) then Exit;
+      if not DoPlay(1, s, request) then Exit;
 
       Result:= 200;
     end else if Pos('/p2/', uri) = 1 then begin
@@ -2240,7 +2240,7 @@ begin
   Result:= SendRaw(@buf[1], Length(buf));
 end;
 
-function THttpThrd.DoPlay(const fname, request: string): boolean;
+function THttpThrd.DoPlay(sno: integer; const fname, request: string): boolean;
 const
   OKKAKE_SPACE = 100 * 1024 * 1024;
 var
@@ -2261,7 +2261,7 @@ begin
   mi:= thMIC.GetMediaInfo(fname);
   try
     mi.GetPlayInfo(L_S);
-    cf:= mi.PlayInfo.Values['mime[1]'];
+    cf:= mi.PlayInfo.Values['mime['+IntToStr(sno)+']'];
     ct:= Fetch(cf, ':');
 
     now_rec:= mi.Vals['General;Format'] = 'NowRecording';
@@ -2273,7 +2273,8 @@ begin
       fsize:= unit2.GetFileSize(fname){fs.Size};
       iseek1:= 0; isize:= fsize;
       nseek1:= 0; nseek2:= 0;
-      dur:= mi.Vals['General;Duration'];
+      dur:= mi.PlayInfo.Values['duration['+IntToStr(sno)+']'];
+      if dur = '' then dur:= mi.Vals['General;Duration'];
       if now_rec then begin
         dur:= '20:00:00.000'; // 20時間のファイルと仮定する
         isize:= 200 * 1024 * 1024 * 1024; // 200GBのファイルと仮定
@@ -2499,7 +2500,7 @@ begin
 
     if not(KeepMode in [100]) and (cmds.Count = 0) then begin
       // トランスコードをせず通常のストリーミング再生をする
-      Result:= DoPlay(fname, request);
+      Result:= DoPlay(sno, fname, request);
       Exit;
     end;
 
@@ -2883,7 +2884,18 @@ begin
               end;
             finally
               if Assigned(proc) then begin
-                if proc.Running then proc.SafeTerminate(-1);
+                i:= 0;
+                while proc.Running and (i < 60) do begin
+                  proc.SafeTerminate(-1);
+                  SleepThread(Handle, 1000);
+                  Inc(i);
+                end;
+                i:= 0;
+                while proc.Running and (i < 60) do begin
+                  proc.Terminate(-1);
+                  SleepThread(Handle, 1000);
+                  Inc(i);
+                end;
                 proc.Free;
                 proc:= nil;
               end;

@@ -161,8 +161,8 @@ begin
   MaxMsgLen:= MaxInt;
   FreeOnTerminate:= False;
   WaitTime:= 1;
-  Priority:= tpLower;
   inherited Create(True);
+  Priority:= tpLower;
 end;
 
 destructor TPipeProcExec.Destroy;
@@ -188,8 +188,8 @@ type
 constructor TPipeProcExecOne.Create;
 begin
   FreeOnTerminate:= False;
-  Priority:= tpLower;
   inherited Create(True);
+  Priority:= tpLower;
 end;
 
 procedure TPipeProcExecOne.Execute;
@@ -244,8 +244,14 @@ begin
       end;
     finally
       i:= 0;
-      while CurProc.Running and (i < 180) do begin
+      while CurProc.Running and (i < 60) do begin
         CurProc.SafeTerminate(-1);
+        SleepThread(Handle, 1000);
+        Inc(i);
+      end;
+      i:= 0;
+      while CurProc.Running and (i < 60) do begin
+        CurProc.Terminate(-1);
         SleepThread(Handle, 1000);
         Inc(i);
       end;
@@ -304,8 +310,14 @@ begin
         proc.Terminate;
         proc.WaitFor;
         j:= 0;
-        while proc.CurProc.Running and (j < 180) do begin
+        while proc.CurProc.Running and (j < 60) do begin
           proc.CurProc.SafeTerminate(-1);
+          SleepThread(Handle, 1000);
+          Inc(j);
+        end;
+        j:= 0;
+        while proc.CurProc.Running and (j < 60) do begin
+          proc.CurProc.Terminate(-1);
           SleepThread(Handle, 1000);
           Inc(j);
         end;
