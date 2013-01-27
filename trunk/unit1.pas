@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.130116';
+  APP_VERSION = '2.0.130128';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -280,12 +280,19 @@ end;
 
 function ScriptFileExists_func(L : Plua_State) : Integer; cdecl;
 var
-  s: string;
+  s, s1, s2: string;
   b: boolean;
 begin
   s:= lua_tostring(L, 1);
-  b:= FileExistsUTF8(ExecPath + 'script/' + s + '.lua') or
-   FileExistsUTF8(ExecPath + 'script_user/' + s + '.lua');
+  b:= FileExistsUTF8(ExecPath + 'script/' + s + '.lua');
+  if not b then begin
+    s1:= SIPCServer.GetValue('UserScripts');
+    while not b do begin
+      s2:= Fetch(s1, '|');
+      if s2 = '' then Break;
+      b:= FileExistsUTF8(ExecPath + 'script/' + s2 + '/' + s + '.lua');
+    end;
+  end;
   lua_pushboolean(L, b);
   Result := 1;
 end;
@@ -325,16 +332,16 @@ begin
   end;
 end;
 
+function FileExists_func(L : Plua_State) : Integer; cdecl;
+begin
+  lua_pushboolean(L, FileExistsUTF8(lua_tostring(L, 1)));
+  Result := 1;
+end;
+
 (*
 function GetTempFileName_func(L : Plua_State) : Integer; cdecl;
 begin
   lua_pushstring(L, FileUtil.GetTempFileName(lua_tostring(L, 1), lua_tostring(L, 2)));
-  Result := 1;
-end;
-
-function FileExists_func(L : Plua_State) : Integer; cdecl;
-begin
-  lua_pushboolean(L, FileExistsUTF8(lua_tostring(L, 1)));
   Result := 1;
 end;
 
@@ -389,7 +396,7 @@ begin
   regTable('fileu', 'ExtractFileName', @ExtractFileName_func);
   regTable('fileu', 'ExtractFilePath', @ExtractFilePath_func);
   regTable('fileu', 'GetCmdStdOut', @GetCmdStdOut_func);
-  //regTable('fileu', 'FileExists', @FileExists_func);
+  regTable('fileu', 'FileExists', @FileExists_func);
   //regTable('fileu', 'GetTempFileName', @GetTempFileName_func);
   //regTable('fileu', 'DeleteFileMatches', @DeleteFileMatches_func);
   regTable('regexpr', 'matches', @regexpr_matches_func);
@@ -1489,7 +1496,8 @@ begin
       if ClientInfo.ScriptFileName = '' then Exit;
       Headers.Clear;
 
-      s:= DecodeX(Copy(uri, Length('/p1/')+1, MaxInt));
+      s:= SeparateLeft(SeparateLeft(uri, '?'), '&'); // URLへ勝手な文字を付けて返してくれる不思議クライアント(WMP)に対処
+      s:= DecodeX(Copy(s, Length('/p1/')+1, MaxInt));
       if not FileExistsUTF8(s) then Exit;
       if not DoPlay(1, s, request) then Exit;
 
@@ -1498,7 +1506,8 @@ begin
       if ClientInfo.ScriptFileName = '' then Exit;
       Headers.Clear;
 
-      s:= DecodeX(Copy(uri, Length('/p2/')+1, MaxInt));
+      s:= SeparateLeft(SeparateLeft(uri, '?'), '&'); // URLへ勝手な文字を付けて返してくれる不思議クライアント(WMP)に対処
+      s:= DecodeX(Copy(s, Length('/p2/')+1, MaxInt));
       i:= StrToInt(Fetch(s, #$09));
       if not FileExistsUTF8(s) then Exit;
       if not DoPlayTranscode(i, s, request) then Exit;
@@ -2588,7 +2597,7 @@ begin
       buf_size:= buf_size * 1024 * 1024;
       buf:= GetMem(buf_size);
       try
-        tmp_fname:= FileUtil.GetTempFileName(TempPath, '$BMS_TRANS');
+        tmp_fname:= FileUtil.GetTempFileName(TempPath, 'BMS_TRANS');
         KeepModeSendOnly:= False;
         if KeepMode <> 0 then begin
           tmp_fname:= '';
@@ -2669,41 +2678,42 @@ begin
                 if i = 0 then Break;
                 s:= Copy(cmd, i+Length('$_cmd_seek_'), MaxInt);
                 s:= Fetch(s, '_$'); // tc
-                if bTimeSeek or bRange then begin
-                  lua_getglobal(L_S, 'BMS');
-                  if bRange then
-                    lua_getfield(L_S, -1, 'GetCmdRangeSeek')
-                  else
-                    lua_getfield(L_S, -1, 'GetCmdTimeSeek');
-                  lua_remove(L_S, -2); // remove BMS
-                  if lua_isnil(L_S, -1) then begin
-                    lua_pop(L_S, 1);
-                    Break;
-                  end;
-                  lua_pushstring(L_S, s); // tc
-                  if bRange then begin
-                    lua_pushnumber(L_S, range1); // start
-                    if range2 >= 0 then
-                      lua_pushnumber(L_S, range2-range1+1) // len
-                    else
-                      lua_pushnil(L_S);
-                  end else begin
-                    if nseek1 <> 0 then
-                      lua_pushstring(L_S, SeekTimeNum2Str(nseek1)) // start
-                    else
-                      lua_pushnil(L_S);
-                    if (nseek2 > nseek1) then
-                      lua_pushstring(L_S, SeekTimeNum2Str(nseek2-nseek1)) // len
-                    else
-                      lua_pushnil(L_S);
-                  end;
-                  lua_pushnumber(L_S, unit2.GetFileSize(fname)); // t_len
-                  lua_pushnumber(L_S, ndur); // t_msec
-                  CallLua(L_S, 5, 1);
-                  cmd:= StringReplace(cmd, '$_cmd_seek_'+s+'_$', lua_tostring(L_S, -1), [rfReplaceAll]);
+
+                lua_getglobal(L_S, 'BMS');
+                if bTimeSeek then
+                  lua_getfield(L_S, -1, 'GetCmdTimeSeek')
+                else
+                  lua_getfield(L_S, -1, 'GetCmdRangeSeek');
+                lua_remove(L_S, -2); // remove BMS
+                if lua_isnil(L_S, -1) then begin
                   lua_pop(L_S, 1);
-                end else
-                  cmd:= StringReplace(cmd, '$_cmd_seek_'+s+'_$', '', [rfReplaceAll]);
+                  Break;
+                end;
+                lua_pushstring(L_S, s); // tc
+                if bTimeSeek then begin
+                  if nseek1 <> 0 then
+                    lua_pushstring(L_S, SeekTimeNum2Str(nseek1)) // start
+                  else
+                    lua_pushnil(L_S);
+                  if (nseek2 > nseek1) then
+                    lua_pushstring(L_S, SeekTimeNum2Str(nseek2-nseek1)) // len
+                  else
+                    lua_pushnil(L_S);
+                end else begin
+                  if bRange then
+                    lua_pushnumber(L_S, range1) // start
+                  else
+                    lua_pushnil(L_S);
+                  if bRange and (range2 >= 0) then
+                    lua_pushnumber(L_S, range2-range1+1) // len
+                  else
+                    lua_pushnil(L_S);
+                end;
+                lua_pushnumber(L_S, unit2.GetFileSize(fname)); // t_len
+                lua_pushnumber(L_S, ndur); // t_msec
+                CallLua(L_S, 5, 1);
+                cmd:= StringReplace(cmd, '$_cmd_seek_'+s+'_$', lua_tostring(L_S, -1), [rfReplaceAll]);
+                lua_pop(L_S, 1);
               end;
               // $_cmd_quiet_xxxxx_$
               while True do begin
