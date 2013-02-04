@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.130128';
+  APP_VERSION = '2.0.130204';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -1819,6 +1819,7 @@ var
 
             else begin
               if (mi.PlayInfo.Values['command[1]'] <> '') or
+               (mi.PlayInfo.Values['command[1][1]'] <> '') or
                (mi.PlayInfo.Values['IsFolder'] <> '') then begin
                 // トランスコードの場合
                 if mi.PlayInfo.Values['IsFolder'] <> '' then begin
