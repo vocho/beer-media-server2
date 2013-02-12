@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.130204';
+  APP_VERSION = '2.0.130212';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -403,6 +403,14 @@ begin
   lua_register(L, 'BMS_ScriptFileExists', @ScriptFileExists_func);
   lua_pushstring(L, ExecPath); lua_setglobal(L, 'BMS_ExecPath');
   lua_pushstring(L, TempPath); lua_setglobal(L, 'BMS_TempPath');
+  lua_getglobal(L, 'package');
+  lua_pushstring(L, 'path');
+  lua_pushstring(L, ExecPath + 'script' + DirectorySeparator + '?.lua');
+  lua_settable(L, -3);
+  lua_pushstring(L, 'cpath');
+  lua_pushstring(L, ExecPath + 'script' + DirectorySeparator + '?.dll');
+  lua_settable(L, -3);
+  lua_pop(L, 1);
 end;
 
 procedure CallLua(L: Plua_State; nargs, nresults: Integer);
@@ -3732,10 +3740,10 @@ begin
       2: Result:= CompareStr(path2, path1);
       3: Result:= CompareText(path1, path2);
       4: Result:= CompareText(path2, path1);
-      5: Result:= GetFileTime(Fetch(path1, '?')) - GetFileTime(Fetch(path2, '?'));
-      6: Result:= GetFileTime(Fetch(path2, '?')) - GetFileTime(Fetch(path1, '?'));
+      5: Result:= GetFileTime(Fetch(path1, #$09)) - GetFileTime(Fetch(path2, #$09));
+      6: Result:= GetFileTime(Fetch(path2, #$09)) - GetFileTime(Fetch(path1, #$09));
       else begin
-        mi:= thMIC.GetMediaInfo(Fetch(path1, '?'));
+        mi:= thMIC.GetMediaInfo(Fetch(path1, #$09));
         try
           mi.GetPlayInfo(ClientInfo.L_S);
           s:= mi.Vals['SortName'];
@@ -3743,7 +3751,7 @@ begin
         finally
           if mi.IsTemp then mi.Free;
         end;
-        mi:= thMIC.GetMediaInfo(Fetch(path2, '?'));
+        mi:= thMIC.GetMediaInfo(Fetch(path2, #$09));
         try
           mi.GetPlayInfo(ClientInfo.L_S);
           s:= mi.Vals['SortName'];
