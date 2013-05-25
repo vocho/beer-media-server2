@@ -14,7 +14,7 @@ uses
 const
   APP_NAME = 'BEER Media Server';
   SHORT_APP_NAME = 'BMS';
-  APP_VERSION = '2.0.130212';
+  APP_VERSION = '2.0.130525';
   SHORT_APP_VERSION = '2.0';
 
 type
@@ -1377,7 +1377,7 @@ begin
                 if Sock.LastError <> 0 then Exit;
                 line:= line + Headers[i] + CRLF;
               end;
-              if UpperCase(protocol) = 'HEAD' then OutputData.Clear;
+              if UpperCase(method) = 'HEAD' then OutputData.Clear;
             end;
 
             if Terminated then Break;
@@ -3007,6 +3007,8 @@ end;
 
 procedure TSSDPDaemon.Execute;
 
+  {
+  // Synapse r171 以前ではSock.AddMulticastに代えてこれを使う必要がある
   procedure AddMulticast7(const MCastIP: AnsiString; const Intf: AnsiString);
   var
     Multicast: TIP_mreq;
@@ -3019,6 +3021,7 @@ procedure TSSDPDaemon.Execute;
      IP_ADD_MEMBERSHIP, PAnsiChar(@Multicast), SizeOf(Multicast)));
     Sock.ExceptCheck;
   end;
+  }
 
 var
   sendSock: TUDPBlockSocket;
@@ -3031,7 +3034,8 @@ begin
     Sock.EnableReuse(True);
     Sock.Bind(MyIPAddr{'0.0.0.0'}, '1900'{SSDP});
     if Sock.LastError <> 0 then Raise Exception.Create(Sock.LastErrorDesc);
-    AddMulticast7('239.255.255.250', MyIPAddr);
+    //AddMulticast7('239.255.255.250', MyIPAddr);
+    Sock.AddMulticast('239.255.255.250');
     if Sock.LastError <> 0 then Raise Exception.Create(Sock.LastErrorDesc);
     //L:= lua_newstate(@alloc, nil);
     st_list:= TStringListUTF8.Create;

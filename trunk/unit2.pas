@@ -844,7 +844,7 @@ begin
           sl.AddVal('General;Duration', GetInfo(mi, 'General;%Duration/String3%'));
           sl.AddVal('General;File_Created_Date_Local', GetInfo(mi, 'General;%File_Created_Date_Local%'));
 
-          c:= StrToIntDef(GetInfo(mi, 'General;%VideoCount%'), 1);
+          c:= StrToIntDef(GetInfo(mi, 'General;%VideoCount%'), 0);
           sl.AddVal('General;VideoCount', IntToStr(c));
           main_v:= 0;
           if c > 1 then begin
