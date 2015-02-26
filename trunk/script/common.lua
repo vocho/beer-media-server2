@@ -67,14 +67,6 @@ function BMS.GetScriptFileName(in_header, ip_addr, in_uri)
     return BMS.ClientInfo.name
   end
 
-  i1 = string.find(in_header, "X-PANASONIC-Registration:", 1, true)
-  if i1 then
-    -- Panasonic プライベート・ビエラ SV-ME7000
-    BMS.ClientInfo.name = "VIERA"
-    BMS.ClientInfo.ext = "SV-ME7000"
-    return BMS.ClientInfo.name
-  end
-
   i1 = string.find(string.upper(in_header), "USER-AGENT:", 1, true)
   if i1 then
     s = string.match(in_header, "(Panasonic Digital Media Player/1%.00)", i1)
@@ -90,6 +82,14 @@ function BMS.GetScriptFileName(in_header, ip_addr, in_uri)
       BMS.ClientInfo.name = "VIERA"
       return BMS.ClientInfo.name
     end
+  end
+
+  i1 = string.find(in_header, "X-PANASONIC-Registration:", 1, true)
+  if i1 then
+    -- Panasonic プライベート・ビエラ SV-ME7000
+    BMS.ClientInfo.name = "VIERA"
+    BMS.ClientInfo.ext = "SV-ME7000"
+    return BMS.ClientInfo.name
   end
 
   -- IP アドレスと同じ名前のスクリプトファイル（例：192.168.0.17.lua）があるならそれを使う。
