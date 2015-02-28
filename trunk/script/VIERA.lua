@@ -93,8 +93,8 @@ function BMS.GetPlayInfo(fname, minfo)
   if minfo.General.Format == "" then return MimeTypes["DUMMY"] end
   
   if minfo.General.Format == "NowRecording" then
-    -- 注１
-    return MimeTypes["DUMMY"], "* " .. fileu.ExtractFileName(fname)
+    -- 録画中のファイルは MPEG-TS と仮定する。
+    return MimeTypes["MPEG_TS"], "* "..fileu.ExtractFileName(fname)
   end
 
   if ext == "jpg" then
